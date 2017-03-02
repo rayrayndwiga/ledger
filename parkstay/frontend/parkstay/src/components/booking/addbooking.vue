@@ -12,7 +12,7 @@
                                   <img v-if="campground.images && campground.images.length>0" :src="campground.images[0].image" width="250" class="img-thumbnail img-responsive">
                                   <img v-else src="https://placeholdit.imgix.net/~text?txtsize=33&txt=Campground&w=250&h=250" alt="campground"  width="250" class="img-thumbnail img-responsive">
                                   <p class="pricing" v-if="priceHistory">
-                                      <strong >${{priceHistory[0].rate.adult|formatMoney(2)}}</strong>
+                                      <strong >${{priceHistory[0][0].rate.adult|formatMoney(2)}}</strong>
                                       <br> <span class="text-muted">Per adult per night</span>
                                   </p>
                                   <p class="pricing" v-else>
@@ -90,7 +90,7 @@
                                   <div class="col-md-6">
                                       <div class="form-group">
                                         <label for="Campsite" class="required">Campsite</label>
-                                        <select class="form-control" name="campsite" v-model="selected_campsite">
+                                        <select class="form-control" name="campsite[]" multiple v-model="selected_campsite">
                                             <option value=""></option>
                                             <option v-for="campsite in campsites" :value="campsite.id">{{campsite.name}} - {{campsite.type}}</option>
                                         </select>
@@ -264,7 +264,7 @@
 </template>
 
 <script>
-import {$,awesomplete,Moment,api_endpoints,validate,formValidate,helpers} from "../../hooks.js";
+import {$,awesomplete,Moment,api_endpoints,validate,formValidate,helpers,select2} from "../../hooks.js";
 import loader from '../utils/loader.vue';
 import modal from '../utils/bootstrap-modal.vue';
 export default {
@@ -275,7 +275,7 @@ export default {
             isModalOpen:false,
             bookingForm:null,
             countries:[],
-            selected_campsite:"",
+            selected_campsite:[],
             selected_arrival:"",
             selected_departure:"",
             priceHistory:null,
@@ -427,21 +427,29 @@ export default {
             let vm = this;
             vm.booking.campsite = vm.selected_campsite;
             vm.booking.price = 0;
-            if (vm.selected_campsite) {
+            if (vm.selected_campsite.length > 0) {
                 if (vm.booking.arrival && vm.booking.departure) {
                     var arrival = Moment(vm.booking.arrival, "YYYY-MM-DD");
                     var departure = Moment(vm.booking.departure, "YYYY-MM-DD");
                     var nights = departure.diff(arrival,'days');
+                    var priceHistory = [];
                     vm.loading.push('updating prices');
-                    vm.$http.get(api_endpoints.campsite_current_price(vm.booking.campsite,arrival.format("YYYY-MM-DD"),departure.format("YYYY-MM-DD"))).then((response)=>{
-                        vm.priceHistory = null;
-                        vm.priceHistory = response.body;
-                        vm.generateBookingPrice();
-                        vm.loading.splice('updating prices',1);
-                    },(error)=>{
-                        console.log(error);
-                        vm.loading.splice('updating prices',1);
+                    $.each(vm.selected_campsite,function (i,campsite_id) {
+                        vm.$http.get(api_endpoints.campsite_current_price(campsite_id,arrival.format("YYYY-MM-DD"),departure.format("YYYY-MM-DD"))).then((response)=>{
+                            priceHistory.push(response.body);
+                            if (i == vm.selected_campsite.length-1) {
+                                vm.priceHistory = null;
+                                vm.priceHistory = priceHistory;
+                                vm.generateBookingPrice();
+                                vm.loading.splice('updating prices',1);
+                            }
+                        },(error)=>{
+                            console.log(error);
+                            vm.loading.splice('updating prices',1);
+                            return false;
+                        });
                     });
+
                 }
             }
         },
@@ -483,9 +491,30 @@ export default {
                 vm.$http.get(api_endpoints.available_campsites(vm.booking.campground,vm.booking.arrival,vm.booking.departure)).then((response)=>{
                     vm.campsites = response.body;
                     if (vm.campsites.length >0) {
-                        vm.selected_campsite =vm.campsites[0].id;
+                        if (vm.selected_campsite.length == 0) {
+                            vm.selected_campsite.push(vm.campsites[0].id);
+                        }
+                        setTimeout(function () {
+                            vm.$nextTick(function () {
+                                $(vm.bookingForm["campsite[]"]).select2({
+                                    "theme": "bootstrap",
+                                    allowClear: true,
+                                    placeholder:"Select Campsite"
+                                }).
+                                on("select2:select",function (e) {
+                                    var selected = $(e.currentTarget);
+                                    vm.selected_campsite = selected.val();
+                                }).
+                                on("select2:unselect",function (e) {
+                                    var selected = $(e.currentTarget);
+                                    vm.selected_campsite = selected.val();
+                                });
+                            });
+                        },100);
+                        vm.loading.splice('fetching campsites',1);
                     }
-                    vm.loading.splice('fetching campsites',1);
+
+
                 },(response)=>{
                     console.log(response);
                     vm.loading.splice('fetching campsites',1);
@@ -549,6 +578,7 @@ export default {
                     vm.selected_departure= vm.booking.departure;
                 }
             });
+
         },
         addGuestCount:function (guest) {
             let vm =this;
@@ -606,14 +636,14 @@ export default {
             vm.booking.price = 0;
             if (vm.park.entry_fee_required){
                 vm.fetchParkPrices(function(){
-
-                    $.each(vm.priceHistory,function (i,price) {
-                        for (var guest in vm.booking.guests) {
-                            if (vm.booking.guests.hasOwnProperty(guest)) {
-                                vm.booking.price += vm.booking.guests[guest] * price.rate[guest];
+                    $.each(vm.priceHistory,function (i,history) {
+                        $.each(history,function (i,price) {
+                            for (var guest in vm.booking.guests) {
+                                if (vm.booking.guests.hasOwnProperty(guest)) {
+                                    vm.booking.price += vm.booking.guests[guest] * price.rate[guest];
+                                }
                             }
-                        }
-
+                        });
                     });
                     vm.booking.entryFees.entry_fee = 0;
                     $.each(vm.parkEntryVehicles,function (i,entry) {
