@@ -31,7 +31,7 @@ openCampsite<template lang="html">
             <h4 class="panel-title">
                 <a role="button" data-toggle="collapse" href="#campsites"
                    aria-expanded="false" aria-controls="collapseOne">
-                    <h3>Campsites</h3>
+                    <h3>Camp Sites</h3>
                 </a>
             </h4>
         </div>
@@ -106,7 +106,7 @@ export default {
             return this.campground.id ? this.campground.id : 0;
         },
         priceHistoryDeleteURL: function (){
-            return api_endpoints.delete_campground_price(this.myID);
+            return api_endpoints.delete_campground_price(this.ID);
         }
     },
     data: function() {
@@ -125,6 +125,7 @@ export default {
                 responsive: true,
                 processing: true,
                 deferRender: true,
+                order: [],
                 ajax: {
                     url: api_endpoints.campground_price_history(this.$route.params.id),
                     dataSrc: ''
@@ -132,14 +133,14 @@ export default {
                 columns: [{
                     data: 'date_start',
                     mRender: function(data, type, full) {
-                        return Moment(data).format('MMMM Do, YYYY');
+                        return Moment(data).format('DD/MM/YYYY');
                     }
 
                 }, {
                     data: 'date_end',
                     mRender: function(data, type, full) {
                         if (data) {
-                            return Moment(data).add(1, 'day').format('MMMM Do, YYYY');
+                            return Moment(data).add(1, 'day').format('DD/MM/YYYY');
                         }
                         else {
                             return '';

@@ -258,7 +258,7 @@ $(function(){
         receivedPaymentsTable.ajax.reload();
     }
     function showRecordPayment(){
-        if (invoice_obj.payment_status != 'paid' && invoice_obj.payment_status != 'over_paid'){
+        if (invoice_obj.payment_status != 'paid' && invoice_obj.payment_status != 'over_paid' && !invoice_obj.voided){
             if ($other_form.hasClass('hide')){
                 $other_form.removeClass('hide');
             }
@@ -460,13 +460,13 @@ $(function(){
 
         $success_row.html(success_html);
         $success_div.removeClass('hide');
-        if (!$location_fieldset.hasClass('hide')) {
+        /*if (!$location_fieldset.hasClass('hide')) {
             $location_fieldset.addClass('hide');
         }
         if (!$storedcard_fieldset.hasClass('hide')) {
             $storedcard_fieldset.addClass('hide');
             $card_fieldset.removeClass('hide');
-        }
+        }*/
         reset_forms();
     }
     function success(reference,msg){
@@ -480,13 +480,13 @@ $(function(){
 
         $success_row.html(success_html);
         $success_div.removeClass('hide');
-        if (!$location_fieldset.hasClass('hide')) {
+        /*if (!$location_fieldset.hasClass('hide')) {
             $location_fieldset.addClass('hide');
         }
         if (!$storedcard_fieldset.hasClass('hide')) {
             $storedcard_fieldset.addClass('hide');
             $card_fieldset.removeClass('hide');
-        }
+        }*/
         reset_forms();
     }
     /*
@@ -639,7 +639,7 @@ $(function(){
                 dataType: "json",
                 headers: {'X-CSRFToken': getCookie('csrftoken')},
                 success: function(resp){
-                    rf.displaySuccess(resp);
+                    rf.refund_modal.foundation('close');
                     rf.refund_form.reset();
                 },
                 error: function(resp){
@@ -706,7 +706,6 @@ $(function(){
         updateAlert:function (msg) {
            rf.modal_alert_text.text(msg);
            rf.show(rf.modal_alert);
-           setTimeout(function(){rf.hide(rf.modal_alert)},5000);
         }
     };
     rf.init();

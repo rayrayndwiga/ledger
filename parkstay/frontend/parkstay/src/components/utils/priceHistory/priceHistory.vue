@@ -137,6 +137,10 @@ export default {
                 reason:'',
                 details:''
             };
+<<<<<<< HEAD
+=======
+            this.$refs.historyModal.close();
+>>>>>>> master
             this.$refs.historyModal.isOpen = false;
         },
         deleteHistoryRecord: function(data) {
@@ -213,7 +217,11 @@ export default {
         },
         addHistory: function() {
             if (this.level == 'campsite'){ this.price.campsite = this.object_id; }
+<<<<<<< HEAD
             this.sendData(this.getAddURL(),'POST',JSON.stringify(vm.price));
+=======
+            this.sendData(this.getAddURL(),'POST',JSON.stringify(this.price));
+>>>>>>> master
         },
         updateHistory: function() {
             if (this.level == 'campsite'){

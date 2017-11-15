@@ -1,5 +1,6 @@
 from django.db import models, connection
 from django.conf import settings
+from decimal import Decimal as D
 from django.dispatch import receiver
 from django.db.models.signals import post_save
 from django.utils.encoding import python_2_unicode_compatible
@@ -15,7 +16,7 @@ class BpayFile(models.Model):
 
     class Meta:
         unique_together = ('created','file_id')
-        app_label = 'payments'
+        db_table = 'payments_bpayfile'
         
     def __unicode__(self):
         return 'File #{0} {1}'.format(self.file_id,self.created.strftime('%Y-%m-%d %H:%M:%S'))
@@ -32,7 +33,7 @@ class BpayFileTrailer(models.Model):
     file = models.OneToOneField(BpayFile, related_name='trailer')
 
     class Meta:
-        app_label = 'payments'
+        db_table = 'payments_bpayfiletrailer'
 
 @receiver(post_save, sender=BpayFileTrailer)
 def update_file_view(sender, instance, **kwargs):
@@ -93,6 +94,7 @@ class BpayTransaction(models.Model):
     type = models.CharField(max_length=3,choices=TRANSACTION_TYPE, help_text='Indicates whether it is a credit or debit item',validators=[MinLengthValidator(3)],)
     cheque_num = models.IntegerField(default=0, help_text='Number of cheques in deposit')
     crn = models.CharField(max_length=20,help_text='Customer Referencer Number')
+    original_crn = models.CharField(null=True,blank=True,max_length=20,help_text='Customer Referencer Number')
     txn_ref = models.CharField(max_length=21, help_text='Transaction Reference Number',validators=[MinLengthValidator(12)])
     service_code = models.CharField(max_length=7, help_text='Unique identification for a service provider realting to a bill.', validators=[MinLengthValidator(1)])
     p_instruction_code = models.CharField(max_length=2,choices=PAYMENT_INSTRUCTION_CODES, help_text='Payment instruction method.',validators=[MinLengthValidator(2)])
@@ -113,7 +115,7 @@ class BpayTransaction(models.Model):
 
     class Meta:
         unique_together = ('crn', 'txn_ref', 'p_date')
-        app_label = 'payments'
+        db_table = 'payments_bpaytransaction'
 
     @property
     def approved(self):
@@ -139,6 +141,33 @@ class BpayTransaction(models.Model):
                 pass
         
         return order
+
+    @property
+    def payment_allocated(self):
+        allocated = D('0.0')
+        if self.order:
+            lines = self.order.lines.all()
+            for line in lines:
+                for k,v in line.payment_details.items():
+                    if k == 'bpay':
+                        for i,a in v.items():
+                            if i == str(self.id):
+                                allocated += D(a)
+        return allocated
+
+    @property
+    def refund_allocated(self):
+        allocated = D('0.0')
+        if self.order:
+            lines = self.order.lines.all()
+            for line in lines:
+                for k,v in line.refund_details.items():
+                    if k == 'bpay':
+                        for i,a in v.items():
+                            if i == str(self.id):
+                                allocated += D(a)
+        return allocated
+
     @property
     def system(self):
         pass
@@ -193,7 +222,7 @@ class BpayGroupRecord(models.Model):
     file = models.ForeignKey(BpayFile, related_name='group_records')
 
     class Meta:
-        app_label = 'payments'
+        db_table = 'payments_bpaygrouprecord'
 
 class BpayGroupTrailer(models.Model):
     total = models.DecimalField(default=0,decimal_places=2,max_digits=12)
@@ -202,7 +231,7 @@ class BpayGroupTrailer(models.Model):
     file = models.ForeignKey(BpayFile, related_name='group_trailerrecords')
 
     class Meta:
-        app_label = 'payments'
+        db_table = 'payments_bpaygrouptrailer'
 
 class BpayAccountRecord(models.Model):
     credit_items = models.IntegerField(default=0)
@@ -214,7 +243,7 @@ class BpayAccountRecord(models.Model):
     file = models.ForeignKey(BpayFile, related_name='account_records')
 
     class Meta:
-        app_label = 'payments'
+        db_table = 'payments_bpayaccountrecord'
 
 class BpayAccountTrailer(models.Model):
     total = models.DecimalField(default=0,decimal_places=2,max_digits=12)
@@ -222,7 +251,7 @@ class BpayAccountTrailer(models.Model):
     file = models.ForeignKey(BpayFile, related_name='account_trailerrecords')
 
     class Meta:
-        app_label = 'payments'
+        db_table = 'payments_bpayaccounttrailer'
 
 class BpayCollection(models.Model):
     date = models.DateField(primary_key=True)
@@ -253,8 +282,7 @@ class BillerCodeSystem(models.Model):
     system = models.CharField(max_length=100)
 
     class Meta:
-        app_label = 'payments'
-        db_table = 'bpay_billercodesystem'
+        db_table = 'payments_billercodesystem'
     
     def __str__(self):
         return '{} - Biller Code: {}'.format(self.system,self.biller_code)
@@ -264,5 +292,4 @@ class BillerCodeRecipient(models.Model):
     email = models.EmailField()
     
     class Meta:
-        app_label = 'payments'
-        db_table = 'bpay_billercoderecipient'
+        db_table = 'payments_billercoderecipient'

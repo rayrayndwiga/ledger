@@ -1,8 +1,9 @@
 from __future__ import unicode_literals
 import traceback
 from django.db import models
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.conf import settings
-from django.contrib.postgres.fields import JSONField
+from django.contrib.postgres.fields import JSONField, IntegerRangeField
 from ledger.payments.bpay.models import BpayTransaction, BpayFile, BillerCodeRecipient, BillerCodeSystem
 from ledger.payments.invoice.models import Invoice, InvoiceBPAY
 from ledger.payments.bpoint.models import BpointTransaction, BpointToken
@@ -23,8 +24,16 @@ class OracleParserInvoice(models.Model):
     reference = models.CharField(max_length=50)
     details = JSONField() 
 
+def increment_receipt_number():
+    last_interface = OracleInterface.objects.all().order_by('id').last()
+    if not last_interface:
+         return settings.ORACLE_IMPORT_SEQUENCE
+    receipt_no = last_interface.receipt_number
+    new_receipt_no = receipt_no + 1
+    return new_receipt_no
+
 class OracleInterface(models.Model):
-    receipt_number = models.IntegerField()
+    receipt_number = models.IntegerField(null=True,blank=True,default=increment_receipt_number)
     receipt_date = models.DateField()
     activity_name = models.CharField(max_length=50)
     amount = models.DecimalField(max_digits=8, decimal_places=2)
@@ -38,6 +47,10 @@ class OracleInterface(models.Model):
 class OracleInterfaceSystem(models.Model):
     system_id = models.CharField(max_length=10)
     system_name = models.CharField(max_length=128)
+    enabled = models.BooleanField(default=False)
+    deduct_percentage = models.BooleanField(default=False)
+    percentage = models.PositiveIntegerField(validators=[MaxValueValidator(99), MinValueValidator(1)],null=True,blank=True)
+    percentage_account_code = models.CharField(max_length=50,null=True,blank=True)
 
     def __str__(self):
         return '{} - {}'.format(self.system_name, self.system_id)
@@ -57,6 +70,14 @@ class OracleAccountCode(models.Model):
     class Meta:
         managed = False
         db_table = 'payments_account_codes'
+
+class OracleOpenPeriod(models.Model):
+    period_name = models.CharField(max_length=240,primary_key=True)
+    closing_status = models.CharField(max_length=1)
+
+    class Meta:
+        managed = False
+        db_table = 'payments_open_periods'
 
 # Refund Tracking
 class TrackRefund(models.Model):

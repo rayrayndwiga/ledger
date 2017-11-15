@@ -10,7 +10,7 @@ from parkstay.emails import send_booking_confirmation
 from parkstay.utils import oracle_integration
 
 class UnpaidBookingsReportCronJob(CronJobBase):
-    RUN_AT_TIMES = ['05:30']
+    RUN_AT_TIMES = ['01:00']
 
     schedule = Schedule(run_at_times=RUN_AT_TIMES)
     code = 'parkstay.unpaid_bookings_report'
@@ -19,13 +19,13 @@ class UnpaidBookingsReportCronJob(CronJobBase):
         outstanding_bookings() 
 
 class OracleIntegrationCronJob(CronJobBase):
-    RUN_AT_TIMES = ['05:00']
+    RUN_AT_TIMES = ['01:00']
 
     schedule = Schedule(run_at_times=RUN_AT_TIMES)
     code = 'parkstay.oracle_integration'
 
     def do(self):
-        oracle_integration(str(date.today()))
+        oracle_integration(str(date.today()-timedelta(days=i)),False)
 
 class SendBookingsConfirmationCronJob(CronJobBase):
     RUN_EVERY_MINS = 5

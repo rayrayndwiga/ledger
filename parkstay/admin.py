@@ -23,6 +23,10 @@ class CampgroundAdmin(admin.ModelAdmin):
     search_fields = ('name',)
     list_filter = ('campground_type','site_type')
 
+@admin.register(models.CampgroundGroup)
+class CampgroundGroupAdmin(admin.ModelAdmin):
+    filter_horizontal = ('members','campgrounds')
+
 @admin.register(models.Campsite)
 class CampsiteAdmin(admin.ModelAdmin):
     list_display = ('name','campground',)
@@ -49,7 +53,7 @@ class BookingAdmin(admin.ModelAdmin):
     list_display = ('arrival','departure','campground','legacy_id','legacy_name','cost_total')
     ordering = ('-arrival',)
     search_fileds = ('arrival','departure')
-    list_filter = ('arrival','departure')
+    list_filter = ('arrival','departure','campground')
     inlines = [BookingInvoiceInline,CampsiteBookingInline]
 
     def has_add_permission(self, request, obj=None):
@@ -113,7 +117,7 @@ class OpenReason(ReasonAdmin):
     pass
 
 @admin.register(models.OutstandingBookingRecipient)
-class OustadningBookingRecipient(admin.ModelAdmin):
+class OutstandingBookingRecipient(admin.ModelAdmin):
     pass
 
 admin.site.register(models.Rate)

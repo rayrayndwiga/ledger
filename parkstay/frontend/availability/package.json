@@ -2,7 +2,7 @@
   "name": "availability",
   "version": "1.0.0",
   "description": "Availability selector for Parkstay",
-  "author": "Scott Percival <scott.percival@dpaw.wa.gov.au>",
+  "author": "ASI <asi@dpaw.wa.gov.au>",
   "private": true,
   "scripts": {
     "dev": "node build/dev-server.js",
@@ -11,8 +11,9 @@
   "dependencies": {
     "custom-event-polyfill": "^0.3.0",
     "debounce": "^1.0.0",
+    "font-awesome": "^4.7.0",
     "foundation-datepicker": "^1.5.5",
-    "foundation-sites": "^6.3.1",
+    "foundation-sites": "6.3.1",
     "jquery": "^3.1.1",
     "moment": "^2.17.1",
     "vue": "^2.2.1"

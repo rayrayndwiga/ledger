@@ -250,6 +250,7 @@ class CampgroundDatatableSerializer(serializers.ModelSerializer):
 class CampgroundSerializer(serializers.ModelSerializer):
     address = serializers.JSONField()
     images = CampgroundImageSerializer(many=True,required=False)
+    campground_map = serializers.FileField(read_only=True,required=False,allow_empty_file=True)
     class Meta:
         model = Campground
         fields = (
@@ -280,6 +281,7 @@ class CampgroundSerializer(serializers.ModelSerializer):
             'images',
             'max_advance_booking',
             'oracle_code',
+            'campground_map'
         )
 
     def get_site_type(self, obj):
@@ -437,9 +439,11 @@ class BookingSerializer(serializers.ModelSerializer):
     campground_site_type = serializers.CharField(source='campground.site_type',read_only=True)
     campsites = serializers.SerializerMethodField()
     invoices = serializers.SerializerMethodField()
+    regos = BookingRegoSerializer(many=True,read_only=True)
     class Meta:
         model = Booking
-        fields = ('id','legacy_id','legacy_name','arrival','departure','details','cost_total','campground','campground_name','campground_region','campground_site_type','campsites','invoices','is_canceled')
+        fields = ('id','legacy_id','legacy_name','arrival','departure','details','cost_total','campground','campground_name','campground_region','campground_site_type','campsites','invoices','is_canceled','guests','regos','vehicle_payment_status','refund_status')
+        read_only_fields = ('vehicle_payment_status','refund_status')
 
 
     def get_invoices(self,obj):
@@ -488,7 +492,7 @@ class RateDetailSerializer(serializers.Serializer):
     infant = serializers.DecimalField(max_digits=5, decimal_places=2)
     period_start = serializers.DateField(format='%d/%m/%Y',input_formats=['%d/%m/%Y'])
     reason = serializers.IntegerField()
-    details = serializers.CharField(required=False)
+    details = serializers.CharField(required=False,allow_blank=True)
     campsite = serializers.IntegerField(required=False)
 
 
@@ -500,9 +504,14 @@ class RateDetailSerializer(serializers.Serializer):
                 raise serializers.ValidationError('This rate does not exist')
         return value
 
+    def validate(self,obj):
+        if obj.get('reason') == 1 and not obj.get('details'):
+            raise serializers.ValidationError('Details required if reason is other.')
+        return obj
+
 class CampgroundPriceHistorySerializer(serializers.ModelSerializer):
     date_end = serializers.DateField(required=False)
-    details = serializers.CharField(required=False)
+    details = serializers.CharField(required=False,allow_blank=True)
     class Meta:
         model = CampgroundPriceHistory
         fields = ('id','date_start','date_end','rate_id','adult','concession','child','infant','editable','deletable','reason','details')
@@ -510,7 +519,7 @@ class CampgroundPriceHistorySerializer(serializers.ModelSerializer):
 
     def validate(self,obj):
         if obj.get('reason') == 1 and not obj.get('details'):
-            raise serializers.ValidationError('Details is required if the reason is other.')
+            raise serializers.ValidationError('Details required if the reason is other.')
         return obj
 
 
@@ -525,7 +534,7 @@ class CampgroundPriceHistorySerializer(serializers.ModelSerializer):
 
 class CampsiteClassPriceHistorySerializer(serializers.ModelSerializer):
     date_end = serializers.DateField(required=False)
-    details = serializers.CharField(required=False)
+    details = serializers.CharField(required=False,allow_blank=True)
     class Meta:
         model = CampsiteClassPriceHistory
         fields = ('id','date_start','date_end','rate_id','adult','concession','child','infant','editable','deletable','reason','details')
@@ -611,7 +620,7 @@ class BulkPricingSerializer(serializers.Serializer):
     child = serializers.DecimalField(max_digits=8, decimal_places=2)
     period_start = serializers.DateField(format='%d/%m/%Y',input_formats=['%d/%m/%Y'])
     reason = serializers.IntegerField()
-    details =serializers.CharField()
+    details =serializers.CharField(required=False)
     type = serializers.ChoiceField(choices=TYPE_CHOICES)
 
     def validate_park(self, val):
@@ -637,6 +646,71 @@ class BulkPricingSerializer(serializers.Serializer):
             raise
         return val
 
+    def validate(self,obj):
+        if obj.get('reason') == 1  and not obj.get('details'):
+            raise serializers.ValidationError('Details required if reason is other.')
+        return obj
+
 class ReportSerializer(serializers.Serializer):
     start = serializers.DateTimeField(input_formats=['%d/%m/%Y'])
     end = serializers.DateTimeField(input_formats=['%d/%m/%Y'])
+
+class BookingSettlementReportSerializer(serializers.Serializer):
+    date = serializers.DateTimeField(input_formats=['%d/%m/%Y'])
+
+# User Serializers
+# --------------------------
+class UserAddressSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Address
+        fields = (
+            'id',
+            'line1',
+            'locality',
+            'state',
+            'country',
+            'postcode'
+        ) 
+
+class UserSerializer(serializers.ModelSerializer):
+    residential_address = UserAddressSerializer()
+    class Meta:
+        model = EmailUser
+        fields = (
+            'id',
+            'last_name',
+            'first_name',
+            'email',
+            'residential_address',
+            'phone_number',
+            'mobile_number',
+        )
+
+class PersonalSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EmailUser
+        fields = (
+            'id',
+            'last_name',
+            'first_name',
+        )
+
+class ContactSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EmailUser
+        fields = (
+            'id',
+            'email',
+            'phone_number',
+            'mobile_number',
+        )
+
+    def validate(self, obj):
+        if not obj.get('phone_number') and not obj.get('mobile_number'):
+            raise serializers.ValidationError('You must provide a mobile/phone number')
+        return obj
+
+class OracleSerializer(serializers.Serializer):
+    date = serializers.DateField(input_formats=['%d/%m/%Y','%Y-%m-%d'])
+    override = serializers.BooleanField(default=False)
+

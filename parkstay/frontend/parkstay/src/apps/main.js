@@ -10,12 +10,15 @@ import Campsite from '../components/campsites/campsite.vue'
 import firstLevelSearch from '../components/booking/first-level-search.vue'
 import bookingDashboard from '../components/booking/dashboard.vue'
 import addBooking from '../components/booking/addbooking.vue'
+import BookingIndex from '../components/booking/index.vue'
+import editBooking from '../components/booking/changebooking2.vue'
 import page_404 from '../components/utils/404.vue'
 import Reports from '../components/reports/reports.vue'
 import Router from 'vue-router'
 import Campsite_type_dash from '../components/campsites-types/campsite-types-dash.vue'
 import Campsite_type from '../components/campsites-types/campsite-type.vue'
 import Bulkpricing from '../components/bulkpricing/bulkpricing.vue'
+import Profile from '../components/user/profile.vue'
 import alert from '../components/utils/alert.vue'
 import store from './store'
 import { mapGetters } from 'vuex'
@@ -56,6 +59,11 @@ const routes = [
         },
         children: [
             {
+                path: "account",
+                name: "profile",
+                component: Profile
+            },
+            {
                 path:'dashboard',
                 component: {
                     render (c) { return c('router-view') }
@@ -75,7 +83,7 @@ const routes = [
                             {
                                 path: '/',
                                 name: 'campsite-type',
-                                component: Campsite_type
+                                component: Campsite_type_dash
                             },
                             {
                                 path:':campsite_type_id',
@@ -118,9 +126,10 @@ const routes = [
                         ]
                     },{
                         path:'bookings',
-                        component: {
+                        /*component: {
                             render (c) { return c('router-view') }
-                        },
+                        },*/
+                        component: BookingIndex,
                         children:[
                             {
                                 path: '/',
@@ -131,6 +140,16 @@ const routes = [
                                 path: 'add/:cg',
                                 name: 'add-booking',
                                 component: addBooking,
+                            },
+                            {
+                                path: 'edit/:booking_id',
+                                name: 'edit-booking',
+                                component: editBooking
+                                /*beforeEnter:(to,from,next) => {
+                                    store.commit('SET_LOADER_STATE',true);
+                                    store.commit('SET_LOADER_TEXT','Loading Booking');
+                                    next();
+                                }*/
                             },
                         ]
                     },

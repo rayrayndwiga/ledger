@@ -24,7 +24,8 @@ class CashAdmin(admin.ModelAdmin):
 
 @admin.register(models.Invoice)
 class InvoiceAdmin(admin.ModelAdmin):
-    pass
+    list_display = ('reference','order','payment_status')
+    search_fields = ('reference',)
 
 @admin.register(models.InvoiceBPAY)
 class InvoiceBpayAdmin(admin.ModelAdmin):
@@ -79,9 +80,11 @@ class BpointTransactionAdmin(admin.ModelAdmin):
                         'processed',
                         'settlement_date',
                         'dvtoken',
-                        'last_digits'
+                        'last_digits',
+                        'is_test'
                     )
-    list_display = ('txn_number','receipt_number','crn1','action','amount','approved')
+    list_display = ('created','settlement_date','txn_number','receipt_number','crn1','action','amount','approved','is_test')
+    search_fields = ('created','amount','crn1')
     
     def has_delete_permission(self,*args,**kwargs):
         return False
@@ -105,7 +108,7 @@ class OracleParserAdmin(admin.ModelAdmin):
 
 @admin.register(models.OracleInterface)
 class OracleInterfaceAdmin(admin.ModelAdmin):
-    list_display = ['activity_name','amount','status','receipt_date'] 
+    list_display = ['activity_name','amount','status','receipt_number','receipt_date']
 
 class OracleInterfaceRecipientInline(admin.TabularInline):
     model = models.OracleInterfaceRecipient

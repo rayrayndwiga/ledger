@@ -20,7 +20,7 @@
                         <div class="dropdown-pane" id="guests-dropdown" data-dropdown data-auto-focus="true">
                             <div class="row">
                                 <div class="small-6 columns">
-                                    <label for="num_adults" class="text-right">Adults<label>
+                                    <label for="num_adults" class="text-right">Adults (non-concessions)<label>
                                 </div><div class="small-6 columns">
                                     <input type="number" id="numAdults" name="num_adults" v-model="numAdults" min="0" max="16"/></label>
                                 </div>
@@ -61,17 +61,17 @@
                     <div class="small-12 medium-12 large-12 columns">
                         <label>Equipment</label>
                     </div>
-                    <div class="small-12 medium-12 large-3 columns">
+                    <div class="small-12 medium-12 large-4 columns">
                         <label><input type="radio" name="gear_type" value="all" v-model="gearType" class="show-for-sr" v-on:change="reload()"/><i class="symb RC3"></i> All types</label>
                     </div>
-                    <div class="small-12 medium-12 large-3 columns">
+                    <div class="small-12 medium-12 large-4 columns">
                         <label><input type="radio" name="gear_type" value="tent" v-model="gearType" class="show-for-sr" v-on:change="reload()"/><i class="symb RC2"></i> Tent</label>
                     </div>
-                    <div class="small-12 medium-12 large-3 columns">
+                    <div class="small-12 medium-12 large-4 columns">
                         <label><input type="radio" name="gear_type" value="campervan" v-model="gearType" class="show-for-sr" v-on:change="reload()"/><i class="symb RV10"></i> Campervan</label>
                     </div>
-                    <div class="small-12 medium-12 large-3 columns">
-                        <label><input type="radio" name="gear_type" value="caravan" v-model="gearType" class="show-for-sr" v-on:change="reload()"/><i class="symb RC4"></i> Caravan</label>
+                    <div class="small-12 medium-12 large-5 columns">
+                        <label><input type="radio" name="gear_type" value="caravan" v-model="gearType" class="show-for-sr" v-on:change="reload()"/><i class="symb RC4"></i> Caravan / Camper trailer</label>
                     </div>
                 </div><div class="row"><div class="small-12 columns">
                     <hr class="search"/>
@@ -119,27 +119,40 @@
                 </div>
             </div>
         </div>
-        <paginate name="filterResults" class="resultList" :list="extentFeatures" :per="10">
-            <div class="row" v-for="f in paginated('filterResults')">
-                <div class="small-12 columns">
-                    <span class="searchTitle">{{ f.name }}</span>
+        <template v-if="extentFeatures.length > 0">
+            <paginate name="filterResults" class="resultList" :list="extentFeatures" :per="9">
+                <div class="row">
+                    <div class="small-12 medium-4 large-4 columns" v-for="f in paginated('filterResults')">
+                        <div class="row">
+                            <div class="small-12 columns">
+                                <span class="searchTitle">{{ f.name }}</span>
+                            </div>
+                            <div class="small-12 medium-12 large-12 columns" v-if="f.images">
+                                <img class="thumbnail" v-bind:src="f.images[0].image"/>
+                            </div>
+                            <div class="small-12 medium-9 large-9 columns">
+                                <div v-html="f.description"/>
+                                <p v-if="f.price_hint && Number(f.price_hint)"><i><small>From ${{ f.price_hint }} per night</small></i></p>
+                                <a class="button" v-bind:href="f.info_url" target="_blank">More info</a>
+                                <a v-if="f.campground_type == 0" class="button" v-bind:href="parkstayUrl+'/availability/?site_id='+f.id+'&'+bookingParam" target="_blank">Book now</a>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                <div class="small-12 medium-3 large-3 columns" v-if="f.images">
-                    <img class="thumbnail" v-bind:src="f.images[0].image"/>
-                </div>
-                <div class="small-12 medium-9 large-9 columns">
-                    <div v-html="f.description"/>
-                    <p v-if="f.price_hint && Number(f.price_hint)"><i><small>From ${{ f.price_hint }} per night</small></i></p>
-                    <a class="button" v-bind:href="f.info_url" target="_blank">More info</a>
-                    <a v-if="f.campground_type == 0" class="button" v-bind:href="parkstayUrl+'/availability/?site_id='+f.id+'&'+bookingParam" target="_blank">Book now</a>
+            </paginate>
+            <div class="row">
+                <paginate-links for="filterResults" :classes="{
+                    'ul': 'pagination'
+                }"></paginate-links>
+            </div>
+        </template>
+        <template v-else>
+            <div class="row align-center">
+                <div class="small-12 medium-12 large-12 columns">
+                    <h2 class="text-center">There are no campgrounds found matching your search criteria. Please change your search or click <a href="https://exploreparks.dbca.wa.gov.au/know/park-stay-search-tips">here</a> for more information.</h2>
                 </div>
             </div>
-        </paginate>
-        <div class="row">
-            <paginate-links for="filterResults" :classes="{
-                'ul': 'pagination'
-            }"></paginate-links>
-        </div>
+        </template>
     </div>
 </template>
 
@@ -234,6 +247,10 @@
 
 .symb.RW3:before {
     content: "s";
+}
+
+.symb.MAINS:before {
+    content: "t";
 }
 
 .f6inject {
@@ -357,7 +374,7 @@
         border: 1px solid #cccccc;
         bottom: 32px;
         left: -140px;
-        min-width: 280px;
+        width: 280px;
     }
 
     .mapPopup:after, .mapPopup:before {
@@ -436,7 +453,7 @@ export default {
     el: '#parkfinder',
     data: function () {
         return {
-            parkstayUrl: global.parkstayUrl || process.env.PARKSTAY_URL,
+            parkstayUrl: process.env.PARKSTAY_URL || global.parkstayUrl,
             defaultCenter: [13775786.985667605, -2871569.067879858], // [123.75, -24.966],
             defaultLayers: [
                 ['dpaw:mapbox_outdoors', {}],
@@ -458,6 +475,7 @@ export default {
                 {name: 'Showers', symb: 'RF15', key: 'showers', 'remoteKey': ['SHOWER']},
                 {name: 'Toilets', symb: 'RF1', key: 'toilets', 'remoteKey': ['TOILETS']},
                 //{name: 'Walk trail', symb: 'RW3', key: 'walktrail', 'remoteKey': ['WALK TRAIL']},
+                {name: 'Powered sites', symb: 'MAINS', key: 'walktrail', 'remoteKey': ['POWERED SITES']},
             ],
             hideExtraFilters: true,
             suggestions: {},
@@ -479,7 +497,8 @@ export default {
             sitesInPersonIcon: require('./assets/pin_offline.svg'),
             sitesAltIcon: require('./assets/pin_alt.svg'),
             locationIcon: require('./assets/location.svg'),
-            paginate: ['filterResults']
+            paginate: ['filterResults'],
+            selectedFeature: null
         }
     },
     computed: {
@@ -575,6 +594,39 @@ export default {
                     resolution: resolution,
                     duration: 1000
                 });
+
+                // Open the popup
+                /*let feature = this.groundsData.a.find(f => parseInt(f.a) == parseInt(target.properties.id));
+                if (feature){
+                    setTimeout(() => {
+                        vm.popup.setPosition(feature.getGeometry().getCoordinates());
+                        // really want to make vue.js render this, except reactivity dies
+                        // when you pass control of the popup element to OpenLayers :(
+                        $("#mapPopupName")[0].innerHTML = feature.get('name');
+                        if (feature.get('images')) {
+                            // console.log(feature.get('images')[0].image);
+                            $("#mapPopupImage").attr('src', feature.get('images')[0].image);
+                            $("#mapPopupImage").show();
+                        } else {
+                            $("#mapPopupImage").hide();
+                        }
+                        if (feature.get('price_hint') && Number(feature.get('price_hint'))) {
+                            $("#mapPopupPrice")[0].innerHTML = '<small>From $' + feature.get('price_hint') + ' per night</small>';
+                        } else {
+                            $("#mapPopupPrice")[0].innerHTML = '';
+                        }
+                        $("#mapPopupDescription")[0].innerHTML = feature.get('description');
+                        $("#mapPopupInfo").attr('href', feature.get('info_url'));
+                        $("#mapPopupBook").attr('href', vm.parkstayUrl+'/availability/?site_id='+feature.getId()+'&'+vm.bookingParam);
+                        if (feature.get('campground_type') == 0) {
+                            $("#mapPopupBook").show();
+                        } else {
+                            $("#mapPopupBook").hide();
+                        }
+                    },1000);
+                }*/
+
+
                 return;
             }
 
@@ -603,6 +655,36 @@ export default {
                 }
             })
 
+        },
+        refreshPopup: function(){
+            let vm = this;
+            let feature = vm.selectedFeature;
+            if (feature != null){
+                vm.popup.setPosition(feature.getGeometry().getCoordinates());
+                // really want to make vue.js render this, except reactivity dies
+                // when you pass control of the popup element to OpenLayers :(
+                $("#mapPopupName")[0].innerHTML = feature.get('name');
+                if (feature.get('images')) {
+                    // console.log(feature.get('images')[0].image);
+                    $("#mapPopupImage").attr('src', feature.get('images')[0].image);
+                    $("#mapPopupImage").show();
+                } else {
+                    $("#mapPopupImage").hide();
+                }
+                if (feature.get('price_hint') && Number(feature.get('price_hint'))) {
+                    $("#mapPopupPrice")[0].innerHTML = '<small>From $' + feature.get('price_hint') + ' per night</small>';
+                } else {
+                    $("#mapPopupPrice")[0].innerHTML = '';
+                }
+                $("#mapPopupDescription")[0].innerHTML = feature.get('description');
+                $("#mapPopupInfo").attr('href', feature.get('info_url'));
+                $("#mapPopupBook").attr('href', vm.parkstayUrl+'/availability/?site_id='+feature.getId()+'&'+vm.bookingParam);
+                if (feature.get('campground_type') == 0) {
+                    $("#mapPopupBook").show();
+                } else {
+                    $("#mapPopupBook").hide();
+                }
+            }
         },
         groundFilter: function(feature) {
             return true;
@@ -665,6 +747,7 @@ export default {
         },
         reload: debounce(function () {
             this.groundsSource.loadSource();
+            this.refreshPopup();
         }, 250),
         updateFilter: function() {
             var vm = this;
@@ -957,6 +1040,7 @@ export default {
 
         $('#mapPopupClose').on('click', function(ev) {
             vm.popup.setPosition(undefined);
+            vm.selectedFeature = null;
             return false;
         });
         this.popupContent = document.getElementById('mapPopupContent');
@@ -1047,11 +1131,11 @@ export default {
         // another loop to spawn the popup on click
         this.olmap.on('singleclick', function(ev) {
             var result = ev.map.forEachFeatureAtPixel(ev.pixel, function(feature, layer) {
+                vm.selectedFeature = feature;
                 vm.popup.setPosition(feature.getGeometry().getCoordinates());
                 // really want to make vue.js render this, except reactivity dies
                 // when you pass control of the popup element to OpenLayers :(
                 $("#mapPopupName")[0].innerHTML = feature.get('name');
-                //console.log(feature);
                 if (feature.get('images')) {
                     // console.log(feature.get('images')[0].image);
                     $("#mapPopupImage").attr('src', feature.get('images')[0].image);
@@ -1066,7 +1150,6 @@ export default {
                 }
                 $("#mapPopupDescription")[0].innerHTML = feature.get('description');
                 $("#mapPopupInfo").attr('href', feature.get('info_url'));
-                console.log(feature);
                 $("#mapPopupBook").attr('href', vm.parkstayUrl+'/availability/?site_id='+feature.getId()+'&'+vm.bookingParam);
                 if (feature.get('campground_type') == 0) {
                     $("#mapPopupBook").show();

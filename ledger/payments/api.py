@@ -22,6 +22,7 @@ from ledger.payments.models import TrackRefund
 from ledger.payments.utils import checkURL, createBasket, createCustomBasket, validSystem, systemid_check,update_payments
 from ledger.payments.facade import bpoint_facade
 from ledger.payments.reports import generate_items_csv, generate_trans_csv
+from ledger.payments.emails import send_refund_email 
 
 from ledger.accounts.models import EmailUser
 from ledger.catalogue.models import Product
@@ -204,7 +205,6 @@ class BpayFileList(viewsets.ReadOnlyModelViewSet):
 #                                                     #
 #######################################################
 class BpointTransactionSerializer(serializers.ModelSerializer):
-    original_txn = serializers.CharField(source='original_txn.txn_number')
     order = serializers.CharField(source='order.number')
     cardtype = serializers.SerializerMethodField()
     settlement_date = serializers.DateField(format='%B, %d %Y')
@@ -492,6 +492,7 @@ class CashViewSet(viewsets.ModelViewSet):
                 txn = serializer.save()
                 if txn.type == 'refund':
                     TrackRefund.objects.create(user=request.user,type=1,refund_id=txn.id,details=serializer.validated_data['details'])
+                    send_refund_email(invoice,'manual',txn.amount)
                 update_payments(invoice.reference)
             http_status = status.HTTP_201_CREATED
             serializer = CashSerializer(txn)
@@ -556,6 +557,7 @@ class InvoiceTransactionSerializer(serializers.ModelSerializer):
         fields = (
             'id',
             'owner',
+            'voided',
             'order_number',
             'num_items',
             'amount',
@@ -626,7 +628,7 @@ class InvoiceTransactionViewSet(viewsets.ModelViewSet):
                         'date':c.created.strftime('%d/%m/%Y'),
                         'type':c.get_source_display().lower().title() if c.type != 'refund' else 'Manual',
                         'details':"{}{}".format(c.get_type_display().lower().title(),": {}".format(c.details) if c.details else ''),
-                        'amount':'$ {}'.format(c.amount) if c.type != 'refund' else '$ -{}'.format(c.amount)
+                        'amount':'$ {}'.format(c.amount) if c.type not in ['refund','move_out'] else '$ -{}'.format(c.amount)
                     })
             #bpay
             bpay = invoice.bpay_transactions
@@ -755,6 +757,7 @@ class CheckoutSerializer(serializers.Serializer):
     vouchers = VoucherSerializer(many=True,required=False)
     custom_basket = serializers.BooleanField(default=False)
     invoice_text = serializers.CharField(required=False)
+    check_url = serializers.URLField(required=False)
 
     def validate(self, data):
         if data['proxy'] and not data['basket_owner']:
@@ -824,7 +827,8 @@ class CheckoutCreateView(generics.CreateAPIView):
             {"code": "<code>}
         ],
         "custom_basket": "false" (optional, default=False),
-        "invoice_text" : "" (optional)
+        "invoice_text" : "" (optional),
+        "check_url" : "" (optional)
     }
     '''
     serializer_class = CheckoutSerializer
@@ -863,7 +867,7 @@ class CheckoutCreateView(generics.CreateAPIView):
                 else:
                     basket = createBasket(serializer.validated_data['products'],request.user,serializer.validated_data['system'])
 
-            redirect = HttpResponseRedirect(reverse('checkout:index')+'?{}&{}&{}&{}&{}&{}&{}&{}&{}&{}&{}&{}&{}'.format(
+            redirect = HttpResponseRedirect(reverse('checkout:index')+'?{}&{}&{}&{}&{}&{}&{}&{}&{}&{}&{}&{}&{}&{}'.format(
                                                                                                 self.get_redirect_value(serializer,'card_method'),
                                                                                                 self.get_redirect_value(serializer,'basket_owner'),
                                                                                                 self.get_redirect_value(serializer,'template'),
@@ -876,7 +880,8 @@ class CheckoutCreateView(generics.CreateAPIView):
                                                                                                 self.get_redirect_value(serializer,'checkoutWithToken'),
                                                                                                 self.get_redirect_value(serializer,'bpay_format'),
                                                                                                 self.get_redirect_value(serializer,'icrn_format'),
-                                                                                                self.get_redirect_value(serializer,'invoice_text')))
+                                                                                                self.get_redirect_value(serializer,'invoice_text'),
+                                                                                                self.get_redirect_value(serializer,'check_url')))
             # inject the current basket into the redirect response cookies
             # or else, anonymous users will be directionless
             redirect.set_cookie(
@@ -912,13 +917,13 @@ class ReportSerializer(serializers.Serializer):
     district = serializers.ChoiceField(required=False,allow_null=True,choices=DISTRICT_CHOICES)
     items = serializers.BooleanField(default=False)
 
-    def validate_system(self,value):
+    '''def validate_system(self,value):
         try:
             if not validSystem(value):
                 raise serializers.ValidationError('This is not a valid system.')
         except Exception as e:
             raise serializers.ValidationError(str(e))
-        return value
+        return value'''
 
     def validate(self,data):
         if data['items'] and not (data['banked_start'] and data['banked_end']):
@@ -961,7 +966,7 @@ class ReportCreateView(views.APIView):
                                             district = serializer.validated_data['district'])
             if report:
                 response = HttpResponse(FileWrapper(report), content_type='text/csv')
-                response['Content-Disposition'] = 'attachment; filename={}.csv'.format(filename)
+                response['Content-Disposition'] = 'attachment; filename="{}.csv"'.format(filename)
                 return response
             else:
                 raise serializers.ValidationError('No report was generated.')

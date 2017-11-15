@@ -1,7 +1,8 @@
-
+import logging
 from django.db.models import Q
 from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import render, get_object_or_404, redirect
+from django.core.urlresolvers import reverse
 from django.views.generic.base import View, TemplateView
 from django.conf import settings
 from django.contrib.auth.mixins import UserPassesTestMixin, LoginRequiredMixin
@@ -28,12 +29,15 @@ from parkstay.models import (Campground,
                                 )
 from parkstay import emails
 from ledger.accounts.models import EmailUser, Address
+from ledger.payments.models import Invoice
 from django_ical.views import ICalFeed
 from datetime import datetime, timedelta
 from decimal import *
 
 from parkstay.helpers import is_officer
 from parkstay import utils
+
+logger = logging.getLogger('booking_checkout')
 
 class CampsiteBookingSelector(TemplateView):
     template_name = 'ps/campsite_booking_selector.html'
@@ -45,7 +49,7 @@ class CampsiteAvailabilitySelector(TemplateView):
     def get(self, request, *args, **kwargs):
         # if page is called with ratis_id, inject the ground_id
         context = {}
-        ratis_id = request.GET.get('ratis_id', None)
+        ratis_id = request.GET.get('parkstay_site_id', None)
         if ratis_id:
             cg = Campground.objects.filter(ratis_id=ratis_id)
             if cg.exists():
@@ -102,11 +106,33 @@ class DashboardView(UserPassesTestMixin, TemplateView):
 
 def abort_booking_view(request, *args, **kwargs):
     try:
+        change = bool(request.GET.get('change',False))
+        change_ratis = request.GET.get('change_ratis',None)
+        change_id = request.GET.get('change_id',None)
+        change_to = None
         booking = utils.get_session_booking(request.session)
+        if change_ratis:
+            try:
+                c_id = Campground.objects.get(ratis_id=change_ratis).id
+            except:
+                c_id = booking.campground.id
+        elif change_id:
+            try:
+                c_id = Campground.objects.get(id=change_id).id
+            except:
+                c_id = booking.campground.id
+        else:
+            c_id = booking.campground.id
         # only ever delete a booking object if it's marked as temporary
         if booking.booking_type == 3:
             booking.delete()
         utils.delete_session_booking(request.session)
+        if change:
+            # Redirect to the availability screen
+            return redirect(reverse('campsite_availaiblity_selector') + '?site_id={}'.format(c_id)) 
+        else:
+            # Redirect to explore parks
+            return redirect(settings.EXPLORE_PARKS_URL+'/park-stay')
     except Exception as e:
         pass
     return redirect('public_make_booking')
@@ -212,6 +238,16 @@ class MakeBookingsView(TemplateView):
                     entry_fee=vehicle.cleaned_data.get('entry_fee')
             )
 
+        # Check if number of people is exceeded in any of the campsites
+        for c in booking.campsites.all():
+            if booking.num_guests > c.campsite.max_people:
+                form.add_error(None, 'Number of people exceeded for the current camp site.')
+                return self.render_page(request, booking, form, vehicles, show_errors=True)
+            # Prevent booking if less than min people 
+            if booking.num_guests < c.campsite.min_people:
+                form.add_error('Number of people is less than the minimum allowed for the current campsite.')
+                return self.render_page(request, booking, form, vehicles, show_errors=True)
+
         # generate final pricing
         try:
             lines = utils.price_or_lineitems(request, booking, booking.campsite_id_list)
@@ -234,7 +270,7 @@ class MakeBookingsView(TemplateView):
                         phone_number=form.cleaned_data.get('phone'),
                         mobile_number=form.cleaned_data.get('phone')
                 )
-                Address.objects.create(line1='address', user=customer, postcode=emailUser['postcode'], country=form.cleaned_data.get('country'))
+                Address.objects.create(line1='address', user=customer, postcode=form.cleaned_data.get('postcode'), country=form.cleaned_data.get('country').iso_3166_1_a2)
         else:
             customer = request.user
         
@@ -247,8 +283,8 @@ class MakeBookingsView(TemplateView):
         booking.save()
 
         # generate invoice
-        reservation = "Reservation for {} from {} to {} at {}".format(
-                '{} {}'.format(booking.customer.first_name, booking.customer.last_name),
+        reservation = u"Reservation for {} from {} to {} at {}".format(
+               u'{} {}'.format(booking.customer.first_name, booking.customer.last_name),
                 booking.arrival,
                 booking.departure,
                 booking.campground.name
@@ -277,26 +313,45 @@ class BookingSuccessView(TemplateView):
         try:
             booking = utils.get_session_booking(request.session)
             invoice_ref = request.GET.get('invoice')
-
-            # FIXME: replace with server side notify_url callback
-            book_inv, created = BookingInvoice.objects.get_or_create(booking=booking, invoice_reference=invoice_ref)
             
-            # set booking to be permanent fixture
-            booking.booking_type = 1  # internet booking
-            booking.expiry_time = None
-            booking.save()
+            if booking.booking_type == 1:
+                try:
+                    inv = Invoice.objects.get(reference=invoice_ref)
+                except Invoice.DoesNotExist:
+                    logger.error('{} tried making a booking with an incorrect invoice'.format('User {} with id {}'.format(booking.customer.get_full_name(),booking.customer.id) if booking.customer else 'An anonymous user'))
+                    return redirect('public_make_booking')
 
-            utils.delete_session_booking(request.session)
-            request.session['ps_last_booking'] = booking.id
-            
-            # send out the invoice before the confirmation is sent
-            emails.send_booking_invoice(booking)
-            # for fully paid bookings, fire off confirmation email
-            if booking.paid:
-                emails.send_booking_confirmation(booking)
+                if inv.system not in ['0019']:
+                    logger.error('{} tried making a booking with an invoice from another system with reference number {}'.format('User {} with id {}'.format(booking.customer.get_full_name(),booking.customer.id) if booking.customer else 'An anonymous user',inv.reference))
+                    return redirect('public_make_booking')
+
+                try:
+                    b = BookingInvoice.objects.get(invoice_reference=invoice_ref)
+                    logger.error('{} tried making a booking with an already used invoice with reference number {}'.format('User {} with id {}'.format(booking.customer.get_full_name(),booking.customer.id) if booking.customer else 'An anonymous user',inv.reference))
+                    return redirect('public_make_booking')
+                except BookingInvoice.DoesNotExist:
+
+                    # FIXME: replace with server side notify_url callback
+                    book_inv, created = BookingInvoice.objects.get_or_create(booking=booking, invoice_reference=invoice_ref)
+
+                    # set booking to be permanent fixture
+                    booking.booking_type = 1  # internet booking
+                    booking.expiry_time = None
+                    booking.save()
+
+                    utils.delete_session_booking(request.session)
+                    request.session['ps_last_booking'] = booking.id
+
+                    # send out the invoice before the confirmation is sent
+                    emails.send_booking_invoice(booking)
+                    # for fully paid bookings, fire off confirmation email
+                    if booking.paid:
+                        emails.send_booking_confirmation(booking,request) 
 
         except Exception as e:
-            if ('ps_last_booking' in request.session) and Booking.objects.filter(id=request.session['ps_last_booking']).exists():
+            if 'ps_booking_internal' in request.COOKIES:
+                return redirect('home')
+            elif ('ps_last_booking' in request.session) and Booking.objects.filter(id=request.session['ps_last_booking']).exists():
                 booking = Booking.objects.get(id=request.session['ps_last_booking'])
             else:
                 return redirect('home')
@@ -335,3 +390,6 @@ class ParkstayRoutingView(TemplateView):
 
 class MapView(TemplateView):
     template_name = 'ps/map.html'
+
+class AccountView(LoginRequiredMixin,TemplateView):
+    template_name = 'ps/dash/dash_tables_campgrounds.html'

@@ -12,6 +12,7 @@ router = routers.DefaultRouter()
 router.register(r'campground_map', api.CampgroundMapViewSet)
 router.register(r'campground_map_filter', api.CampgroundMapFilterViewSet)
 router.register(r'availability', api.AvailabilityViewSet, 'availability')
+router.register(r'availability_ratis', api.AvailabilityRatisViewSet, 'availability_ratis')
 router.register(r'campgrounds', api.CampgroundViewSet)
 router.register(r'campsites', api.CampsiteViewSet)
 router.register(r'campsite_bookings', api.CampsiteBookingViewSet)
@@ -37,11 +38,15 @@ router.register(r'users',api.UsersViewSet)
 router.register(r'contacts',api.ContactViewSet)
 
 api_patterns = [
+    url(r'^api/profile$',api.GetProfile.as_view(), name='get-profile'),
+    url(r'^api/oracle_job$',api.OracleJob.as_view(), name='get-oracle'),
     url(r'^api/bulkPricing', api.BulkPricingView.as_view(),name='bulkpricing-api'),
     url(r'^api/search_suggest', api.search_suggest, name='search_suggest'),
     url(r'^api/create_booking', api.create_booking, name='create_booking'),
     url(r'api/get_confirmation/(?P<booking_id>[0-9]+)/$', api.get_confirmation, name='get_confirmation'),
     url(r'^api/reports/booking_refunds$', api.BookingRefundsReportView.as_view(),name='booking-refunds-report'),
+    url(r'^api/reports/bookings$', api.BookingReportView.as_view(),name='bookings-report'),
+    url(r'^api/reports/booking_settlements$', api.BookingSettlementReportView.as_view(),name='booking-settlements-report'),
     url(r'^api/',include(router.urls))
 ]
 
@@ -49,12 +54,14 @@ api_patterns = [
 urlpatterns = [
     url(r'^admin/', admin.site.urls),
     url(r'', include(api_patterns)),
+    url(r'^account/', views.AccountView.as_view(), name='account'),
     url(r'^$', views.ParkstayRoutingView.as_view(), name='ps_home'),
     url(r'^campsites/(?P<ground_id>[0-9]+)/$', views.CampsiteBookingSelector.as_view(), name='campsite_booking_selector'),
     url(r'^availability/$', views.CampsiteAvailabilitySelector.as_view(), name='campsite_availaiblity_selector'),
-    url(r'^ical/campground/(?P<ground_id>[0-9]+)/$', views.CampgroundFeed(), name='campground_calendar'),
+    #url(r'^ical/campground/(?P<ground_id>[0-9]+)/$', views.CampgroundFeed(), name='campground_calendar'),
     url(r'^dashboard/campgrounds$', views.DashboardView.as_view(), name='dash-campgrounds'),
     url(r'^dashboard/campsite-types$', views.DashboardView.as_view(), name='dash-campsite-types'),
+    url(r'^dashboard/bookings/edit/', views.DashboardView.as_view(), name='dash-bookings'),
     url(r'^dashboard/bookings$', views.DashboardView.as_view(), name='dash-bookings'),
     url(r'^dashboard/bulkpricing$', views.DashboardView.as_view(), name='dash-bulkpricing'),
     url(r'^dashboard/', views.DashboardView.as_view(), name='dash'),

@@ -1,7 +1,7 @@
 from __future__ import unicode_literals
 import traceback
 import decimal
-from django.db import models
+from django.db import models,transaction
 from django.db.models import Q
 from django.db.models import Sum
 from django.db.models.functions import Coalesce
@@ -24,12 +24,13 @@ class Invoice(models.Model):
     system = models.CharField(max_length=4,blank=True,null=True)
     token = models.CharField(max_length=80,null=True,blank=True)
     voided = models.BooleanField(default=False)
+    previous_invoice = models.ForeignKey('self',null=True,blank=True)
 
     def __unicode__(self):
         return 'Invoice #{0}'.format(self.reference)
 
     class Meta:
-        app_label = 'payments'
+        db_table = 'payments_invoice'
 
     # Properties
     # =============================================
@@ -62,7 +63,7 @@ class Invoice(models.Model):
 
     @property
     def refundable_amount(self):
-        return self.payment_amount - self.__calculate_total_refunds()
+        return self.total_payment_amount - self.__calculate_total_refunds()
 
     @property
     def refundable(self):
@@ -105,6 +106,12 @@ class Invoice(models.Model):
     def payment_amount(self):
         ''' Total amount paid from bpay,bpoint and cash.
         '''
+        return self.__calculate_bpay_payments() + self.__calculate_bpoint_payments() + self.__calculate_cash_payments() - self.__calculate_total_refunds()
+
+    @property
+    def total_payment_amount(self):
+        ''' Total amount paid from bpay,bpoint and cash.
+        '''
         return self.__calculate_bpay_payments() + self.__calculate_bpoint_payments() + self.__calculate_cash_payments()
 
     @property
@@ -112,7 +119,17 @@ class Invoice(models.Model):
         return self.__calculate_total_refunds()
 
     @property
+    def deduction_amount(self):
+        return self.__calculate_deductions()
+
+    @property
+    def transferable_amount(self):
+        return self.__calculate_cash_payments()
+
+    @property
     def balance(self):
+        if self.voided:
+            return decimal.Decimal(0)
         amount = decimal.Decimal(self.amount - self.payment_amount)
         if amount < 0:
             amount =  decimal.Decimal(0)
@@ -122,7 +139,7 @@ class Invoice(models.Model):
     def payment_status(self):
         ''' Payment status of the invoice.
         '''
-        amount_paid = self.__calculate_bpay_payments() + self.__calculate_bpoint_payments() + self.__calculate_cash_payments()
+        amount_paid = self.__calculate_bpay_payments() + self.__calculate_bpoint_payments() + self.__calculate_cash_payments() - self.__calculate_total_refunds()
 
         if amount_paid == decimal.Decimal('0') and self.amount > 0:
             return 'unpaid'
@@ -163,9 +180,16 @@ class Invoice(models.Model):
             less the reversals for this invoice.
         '''
         payments = dict(self.cash_transactions.filter(type='payment').aggregate(amount__sum=Coalesce(Sum('amount'), decimal.Decimal('0')))).get('amount__sum')
+        move_ins = dict(self.cash_transactions.filter(type='move_in').aggregate(amount__sum=Coalesce(Sum('amount'), decimal.Decimal('0')))).get('amount__sum')
         reversals = dict(self.cash_transactions.filter(type='reversal').aggregate(amount__sum=Coalesce(Sum('amount'), decimal.Decimal('0')))).get('amount__sum')
+        move_outs = dict(self.cash_transactions.filter(type='move_out').aggregate(amount__sum=Coalesce(Sum('amount'), decimal.Decimal('0')))).get('amount__sum')
 
-        return payments - reversals
+        return (payments + move_ins) - (reversals + move_outs)
+
+    def __calculate_deductions(self):
+        '''Calculate all the move out transactions for this invoice
+        '''
+        return dict(self.cash_transactions.filter(type='move_out').aggregate(amount__sum=Coalesce(Sum('amount'), decimal.Decimal('0')))).get('amount__sum')
 
     def __calculate_bpoint_payments(self):
         ''' Calcluate the total amount of bpoint payments and
@@ -216,6 +240,7 @@ class Invoice(models.Model):
         :return: BpointTransaction
         '''
         from ledger.payments.facade import bpoint_facade
+        from ledger.payments.utils import update_payments
         try:
             if self.token:
                 card_details = self.token.split('|')
@@ -225,6 +250,8 @@ class Invoice(models.Model):
                 )
                 if len(card_details) == 3:
                     card.last_digits = card_details[2]
+                else:
+                    card.last_digits = None
                 txn = bpoint_facade.pay_with_temptoken(
                         'payment',
                         'telephoneorder',
@@ -244,12 +271,63 @@ class Invoice(models.Model):
                         UsedBpointToken.objects.create(DVToken=card_details[0])
                         self.token = ''
                         self.save()
+                    update_payments(self.reference)
                 return txn
             else:
                 raise ValidationError('This invoice doesn\'t have any tokens attached to it.')
         except Exception as e:
             traceback.print_exc()
             raise
+
+    def move_funds(self,amount,invoice,details):
+        from ledger.payments.models import CashTransaction
+        from ledger.payments.utils import update_payments 
+        with transaction.atomic():
+            try:
+                # Move all the bpoint transactions to the new invoice
+                for txn in self.bpoint_transactions:
+                    txn.crn1 = invoice.reference
+                    txn.save()
+                # Move all the bpay transactions to the new invoice
+                for txn in self.bpay_transactions:
+                    txn.crn = invoice.reference
+                    txn.save()
+                # Move the remainder of the amount to the a cash transaction
+                new_amount = self.__calculate_cash_payments()
+                if self.transferable_amount < new_amount:
+                    raise ValidationError('The amount to be moved is more than the allowed transferable amount')
+                if new_amount > 0:
+                    # Create a moveout transaction for current invoice
+                    CashTransaction.objects.create(
+                        invoice = self, 
+                        amount = amount, 
+                        type = 'move_out', 
+                        source = 'cash',
+                        details = 'Move funds to invoice {}'.format(invoice.reference),
+                        movement_reference = invoice.reference  
+                    )
+                    update_payments(self.reference)
+                    # Create a move in transaction for other invoice
+                    CashTransaction.objects.create(
+                        invoice = invoice, 
+                        amount = amount, 
+                        type = 'move_in', 
+                        source = 'cash',
+                        details = 'Move funds from invoice {}'.format(self.reference),
+                        movement_reference = self.reference  
+                    )
+                # set the previous invoice in the new invoice
+                invoice.previous_invoice = self
+                invoice.save()
+
+                # Update the oracle interface invoices sp as to prevent duplicate sending of amounts to oracle
+                
+                from ledger.payments.models import  OracleParserInvoice
+                OracleParserInvoice.objects.filter(reference=self.reference).update(reference=invoice.reference)
+
+                update_payments(invoice.reference)
+            except:
+                raise
 
 class InvoiceBPAY(models.Model):
     ''' Link between unmatched bpay payments and invoices
@@ -258,7 +336,7 @@ class InvoiceBPAY(models.Model):
     bpay = models.ForeignKey('payments.BpayTransaction')
 
     class Meta:
-        app_label = 'payments'
+        db_table = 'payments_invoicebpay'
 
     def __str__(self):
         return 'Invoice No. {}: BPAY CRN {}'.format(self.invoice.reference,self.bpay.crn)
