@@ -157,7 +157,7 @@ export default {
   },
     watch: {},
     components: {
-        datatable
+        datatable,
     },
     beforeRouteEnter:function(to,from,next){
         utils.fetchOrganisations().then((response)=>{
